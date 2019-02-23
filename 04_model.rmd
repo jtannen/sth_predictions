@@ -1,0 +1,582 @@
+---
+title: "Predicting the house"
+author: "Jonathan Tannen"
+date: "February 18, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning=FALSE,
+  message=FALSE,
+  dpi=300,
+  root.dir = "C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop/"
+)
+
+setwd("C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop/")
+```
+
+## Predicting the State House, Part 4
+I'm hosting a workshop at Penn's [Masters of Urban Spatial Analytics](https://penniur.upenn.edu/instruction/graduate) program. In it, I'm speaking on my work [predicting the 2018 State House race](https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents). It's forced me to organize my code, and I think it's useful enough that I'll be posting the course resources here as well. This tutorial is organized into four parts: the [Relational Database](01_relational_db.html), [Processing the GIS Geographies](02_geographies.html), [Prepping the Data for Analysis](03_rectangular_data.html), and Making the Predictions. In this post, the good stuff: making the predictions.
+
+```{r load}
+library(tidyverse)
+source("utils/util.R")
+
+load("outputs/df.rda")
+df <- df %>% group_by()
+```
+
+## The Pennsylvania State House
+The Pennsylvania General Assembly is divided into two houses, the Upper and Lower. The Upper (aka the State Senate) has 50 senators, each of whom serve four-year terms. The Lower (aka the State House) has 203 representatives who serve two-year terms. We're focused on the second (the Senate was certainly out of play in 2018, since only 25 seats are open in a given year).
+
+Control of the State House has swung sharply. Democrats eked out a 102-seat majority in 2006, but quickly lost it in 2010, and Republicans have dominated since. The effect of gerrymandering are apparent in the 2012-to-2014 shift (remember that due to a court challenge, [the old districts were used in 2012](02_geographies.html)).
+
+```{r state_house_plot}
+party_colors <- c(Dem = strong_blue, Rep = strong_red)
+
+ggplot(
+  df %>% 
+    group_by(year) %>% 
+    summarise(
+      Dem = sum(sth_pctdem > 0.5),
+      Rep = sum(sth_pctdem < 0.5)
+    ) %>% 
+    group_by() %>%
+    gather(key="party", value="n_seats", Dem:Rep),
+  aes(x = asnum(year), y = n_seats, color = party)
+) +
+  geom_hline(yintercept=101.5, color = "grey30") +
+  geom_point(size = 4) +
+  geom_line(aes(group = party), size = 1) +
+  scale_color_manual(values=party_colors, guide=FALSE) +
+  theme_sixtysix() +
+  annotate(
+    "text", 
+    label = c("Dem", "Rep"), 
+    x = 2015, y=c(86, 117), 
+    color=c(strong_blue, strong_red),
+    fontface="bold"
+  ) +
+  scale_x_continuous('', breaks = seq(2002,2016,2)) +
+  scale_y_continuous("Number of Seats won") +
+  ggtitle("Pennsylvania House Party Control")
+
+```
+
+Flashback to October 2018. As we enter the 2018 election, it's nationally clear that Democrats are going to have a strong election. But how strong? And how will that translate down to these State Races? Simply put: do Democrats have a shot to take back the PA House?
+
+Let's make some predictions.
+
+## Our model
+*NOTE: This is different from the model I actually used to make my predictions. I've cleaned up the data significantly, and improved the method using my [lessons learned](blog_link). It's what I wish I'd done.*
+
+Let's call $sth_{yr}$ the two-party percent of the vote for State House in year $y$ in race $r$.
+
+In a best case scenario, we would have polls of voters. Then we could capture simple-seeming things that our data has no idea of: How charismatic is a candidate? Are they well organized? Have they been running ads? Polls are what FiveThirtyEight uses, and why they get such good predictions. Of course, noboday actually publicly polls the 203 PA State House races.
+
+In a worst case scenario, we would have to use only data from prior elections. This would leave us completely unable to predict large swings in public sentiment, and we would have to expand our uncertainty to capture the full range of election-level random effects (aka the way that all races are correlated from year to year). Imagine trying to predict the 2018 election using only the 2016 and 2014 results, without any data from 2018 that signaled Something Is Different. We would need to produce predictions capable of saying both "maybe this year is like 2010" and "maybe this year is like 2006".
+
+Luckily, we are somewhere in between. While we don't have polling on this year's State House races, we do have polling on the US Congressional races. To the extent that USC races are correlated with STH races (probably a lot), we can use the USC polls to estimate the overall tenor of the race. Better yet, we don't have to actually use polling data itself, because FiveThirtyEight has already translated them into predicted votes. 
+
+Here's the plan: model the results in a State House race as a function of past results in that district along with the US Congress results *in that year*:
+
+$$
+\begin{align*}
+sth_{yr} =& \beta_0 + \beta_1 sth_{y-1,r} + \beta_2 incumbent\_is\_dem_{yr} + \beta_3 sth_{y-1,r} * incumbent\_is\_dem_{yr} \\
+&+ \beta_4 usc_{y,usc(r)} + \beta_5 usc_{y,PA} +  \beta_6 uspgov_{y-1, r} + \beta_7 uspgov_{y, PA} + \beta_8 uspgov_{y-1, PA} + \epsilon_{yr}
+\end{align*}
+$$
+where $incumbent\_is\_dem$ is $1$ if the democratic candidate is an incumbent, $-1$ if the republican is, and $0$ otherwise; $usc(r)$ is the result in the entire USC district that race $r$ belongs to (as opposed to just in the precinct); the subscript $PA$ represents the state-wide results; and $uspgov$ is the result of either the USP or the GOV race, whichever occurred that year. 
+
+One thing to note is that I don't include year-level random effects. Instead, I parametrize the vote using several annual-level covariates: this year's USPGOV results, last year's USPGOV results, this year's total USC results, and an overall mean. That's four degrees of freedom used up when we're only going to be able to use data from seven elections; we're already on thin ice, and hopefully uncertainty in those $\beta$s capture annual variations. We'll check when we model
+
+The above results will work well for races where everything was contested, but we clearly shouldn't include uncontested races. So we'll do two things: for races that are uncontested in year $y$, we will not model them at all, since we know the running candidate will win 100% of the vote. For races that were not contested last cycle but are contested this year, we will model them entirely separately, using a different equation:
+
+**Model for formerly uncontested races:**
+$$
+\begin{align*}
+sth_{yr} =& \beta_0 + \beta_1 dem\_is\_uncontested_{y-1, r} + \beta_2 dem\_is\_uncontested_{y-1, r} * incumbent\_is\_running_{y,r} \\
+&+ \beta_4 usc_{y,usc(r)} + \beta_5 usc_{y,PA} +  \beta_6 uspgov_{y-1, r} + \beta_7 uspgov_{y, PA} + \beta_8 uspgov_{y-1, PA} + \epsilon_{yr}
+\end{align*}
+$$
+
+Let's create those formulas.
+```{r formulas}
+contested_form <- sth_pctdem ~ 1 +
+  sth_pctdem_lagged +
+  incumbent_is_dem +
+  incumbent_is_running:sth_pctdem_lagged +
+  usc_pctdem + usc_pctdem_statewide +
+  uspgov_pctdem_statewide + 
+  uspgov_pctdem_lagged +
+  uspgov_pctdem_statewide_lagged
+
+uncontested_form <- sth_pctdem ~ 1 + 
+  dem_won_lagged + 
+  incumbent_is_running +
+  dem_won_lagged:incumbent_is_running +
+  usc_pctdem + usc_pctdem_statewide +
+  uspgov_pctdem_statewide + 
+  uspgov_pctdem_lagged + 
+  uspgov_pctdem_statewide_lagged
+
+
+## This is a leftover from my playing around with logit models.
+fit_type <- "lm"
+
+if(fit_type == "lm"){
+  fit_func <- function(formula, data, ...) lm(formula, data, ...)
+} else if (fit_type == 'logit') {
+  fit_func <- function(formula, data, ...) glm(formula, family=binomial(link="logit"), data=data, ...)
+}
+```
+
+### Bootstrapping
+To generate uncertainty and cross-validate, we'll bootstrap.
+
+It's not clear to me what is the right level of bootstrapping for validation. We could bootstrap races (the rows of the dataframe), but I'm seriously worried that there could be systematic swings from election to election (aka election-level random effects or interactions). By only bootstrapping the rows, we would be cheating then: we would actually always have observations from every election, and never get real uncertainty of election-level randomness.
+
+Here's my approach: I'll fit the model by bootstrapping races. However, in order to validate, we'll walk through holding out each election as our test set. We only have seven elections to do this for (2004 - 2016; we can't use 2002 since we need lagged data), but hopefully that's enough to spot bad behaviors. This is a super conservative approach, but I prefer safe, large error bars when publishing predictions to the forever internet.
+
+### Crosswalking
+
+Finally, an aside. Remember that some of the lagged data required crosswalking. Thus, some of the lagged historic races may be *fractionally contested*: some of the area may have had uncontested races, and others contested. 
+
+```{r contested_hist}
+hist(df$sth_frac_contested_lagged)
+```
+
+I'm going to arbitrarily call you uncontested if half of the population or more lived in races that were uncontested last cycle. \_shrugemoji\_
+
+Ok, fit the model.
+
+## Fitting the model
+
+We'll build up our helper functions to fit the model. First, we'll write `fit_once`, which fits a single model for a single year. 
+
+Then we'll write `bootstrap`, which bootstraps rows of the dataframe, and runs `fit_once` many times, generating bootstrapped predictions for a single holdout year.
+
+Finally, we'll loop through each year as a holdout, getting `bootstrapped`ed results for each.
+
+Ideally we would define an S4 class to hold the predictions, but I'm lazy and just pass around nested lists.
+
+```{r fit_model}
+## can't use 2002 since it doesn't have lagged data
+df <- df %>% filter(year > 2002)
+
+fit_once <- function(df, holdout, contested_form, uncontested_form, verbose = TRUE){
+  df$dem_won_lagged <- df$sth_pctdem_lagged > 0.5
+  df$incumbent_is_running <- abs(df$incumbent_is_dem)
+  
+  df$set <- ifelse(df$year %in% holdout, "test", "train")
+  df$condition <- with(
+    df,
+    ifelse(
+      abs(dem_is_uncontested) == 1, "uncontested",
+      ifelse(
+        sth_frac_contested_lagged <= 0.5, "contested",
+        "previously_uncontested"
+      )
+    )
+  )
+  
+  df$uspgov_is_usp <- (asnum(df$year) %% 4) == 0
+  
+  contested_fit <- fit_func(
+    contested_form,
+    data = df %>% filter(set == "train" & condition == "contested")
+  )
+  
+  if(verbose) {
+    print("Contested Model")
+    print(summary(contested_fit)) 
+    dummy <- readline(prompt="Press [enter] to continue")
+  }
+  
+  df$pred <- NA
+  df$pred[df$condition == "contested"] <- predict(
+    contested_fit, 
+    newdata = df[df$condition == "contested",]
+  )
+
+  if(verbose) {
+    test_plot <- ggplot(
+      df %>% filter(condition == "contested"),
+      aes(x = pred, y = sth_pctdem)
+    ) +
+      geom_point() +
+      geom_abline(slope=1, intercept=0) +
+      facet_grid(~set) +
+      ggtitle("Predicted values of Contested Model")
+    print(test_plot)
+  }
+  
+  uncontested_fit <- fit_func(
+    uncontested_form,
+    data = df %>% filter(set == "train" & condition == "previously_uncontested")
+  )
+  
+  if(verbose) {
+    print("Uncontested Model")
+    print(summary(uncontested_fit)) 
+    # dummy <- readline(prompt="Press [enter] to continue")
+  }
+  
+  df$pred[df$condition == "previously_uncontested"] <- predict(
+    contested_fit, 
+    newdata = df[df$condition == "previously_uncontested",]
+  )
+
+  if(verbose) {
+    test_plot <- ggplot(
+      df %>% filter(condition == "previously_uncontested"),
+      aes(x = pred, y = sth_pctdem)
+    ) +
+      geom_point() +
+      geom_abline(slope=1, intercept=0) +
+      facet_grid(~set) +
+      ggtitle("Predicted values of Uncontested Model")
+    print(test_plot)
+  }
+  
+  df$pred[df$condition == "uncontested"] <- df %>%
+    filter(condition == "uncontested") %>%
+    with(
+      0.5 + 0.5*dem_is_uncontested
+    )
+ 
+  sds <- c(
+    contested = sd(contested_fit$residuals),
+    previously_uncontested = sd(uncontested_fit$residuals),
+    uncontested = 0
+  )
+  
+  ## this is a noisy estimate, for when we bootstrap
+  sample <- df %>%
+    filter(set == 'test') %>%
+    mutate(
+      pred_samp = pred + rnorm(n(), mean=0, sd=sds[condition])
+    ) %>%
+    select(race, sth, condition, pred, pred_samp)
+  
+  ## fit_once returns a list of dfs
+  return(list(
+    pred = df[,c("sth", "pred")],
+    contested_coef = broom::tidy(contested_fit),
+    uncontested_coef = broom::tidy(uncontested_fit),
+    sample = sample
+  ))
+}
+
+results_once <- fit_once(
+  df, 
+  2016, 
+  contested_form=contested_form, 
+  uncontested_form=uncontested_form
+)
+```
+
+We've fit the model once, using 2016 as the holdout. Let's examine the results.
+
+First, make sure the coefficients of the models make sense to you. They're purposefully simple models, where outcomes are correlated with other outcomes. 
+
+*Contested Model:* All of the obvious culprits have positive correlations: the lagged STH results, incumbent party, USC results in the district, USC results statewide, USP/GOV results in the statewide, and lagged USP/GOV results from the district. The only negative correlation is the lagged USP/GOV statewide results. This makes sense, given everything we control for: if the Democratic Party did better statewide last year, but your district still voted only at rate `X`, then we expect you to vote more Republican this time around. Interestingly, the interaction is insignificant: knowing that the incumbent is running doesn't make the last election's results any more pertinent.
+
+*Uncontested Model:* Similarly, these results are what we expected. Notice that the coefficient of `incumbent_is_running` means that a Republican incumbent gets a 5.3 point boost, whereas `incumbent_is_running + dem_won_laggedTRUE:incumbent_is_running` means a Democratic incumbent gets a 4.4 point boost (the difference is not significant, I'm just pointing out how to interpret the interaction.).
+
+The plots above make it look like we're not making terrible predictions in our test set.
+
+Looks ok. Now, let's bootstrap the races, still sticking to a single year. 
+
+```{r bootstrap}
+bootstrap <- function(df, holdout, nboot=1000, verbose=TRUE, ...){
+  bs <- list()
+  for(i in 1:nboot){
+    ntrain <- sum(!df$year %in% holdout)
+    bsdf <- rbind(
+      df %>% filter(!year %in% holdout) %>% sample_n(size=ntrain, replace=TRUE),
+      df %>% filter(year %in% holdout)
+    )
+    bs[[i]] <- fit_once(bsdf, holdout, verbose=FALSE, ...)
+    bs[[i]]$sim <- i
+    if(verbose & (i %% 100 == 0)) print(i)
+  }
+
+
+  ## attach sim to each data.frame in the results, and rbind
+  rbind_results <- list()
+  list_names <- names(bs[[1]])
+  list_names <- list_names[list_names != 'sim']
+
+  for(name in list_names){
+    rbind_results[[name]] <- do.call(
+      rbind,
+      lapply(bs, function(x) x[[name]] %>% mutate(sim = x$sim))
+    )
+  }
+  
+  rbind_results$holdout_year <- holdout
+
+  return(rbind_results)
+}
+
+bs <- bootstrap(
+  df, 
+  holdout=2016, 
+  contested_form=contested_form, 
+  uncontested_form=uncontested_form,
+  verbose=FALSE
+)
+```
+
+Let's see how we did. First, do the coefficients make sense?
+```{r coef_plots, fig.height=7}
+coef_plot <- function(bs, coef_name='contested_coef'){
+  ggplot(
+      bs[[coef_name]], 
+      aes(x=term, y=estimate)
+  ) + 
+    geom_boxplot() +
+    theme_sixtysix() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=0.5)) +
+    ggtitle(
+      paste("Coefficients of", coef_name),
+      paste("Holdout:", bs$holdout_year)
+    )
+}
+
+coef_plot(bs, 'contested_coef')
+coef_plot(bs, 'uncontested_coef')
+```
+Sure.
+
+How did the predictions perform? Let's look at individual races.
+```{r indiv_race_preds}
+## order the plot nicely
+gg_race_pred <- function(bs){
+  holdout_year <- bs$holdout_year
+  true_results <- df[df$year == holdout_year,]
+  
+  race_order <- bs$sample %>% 
+    group_by(race) %>%
+    summarise(m = mean(pred_samp)) %>%
+    with(race[order(m)])
+
+  ggplot(
+    bs$sample %>% mutate(race = factor(race, levels = race_order)), 
+    aes(x=race, y=pred_samp)
+  ) +
+    geom_hline(yintercept=0.5, size=1, color = 'grey30')+
+    geom_boxplot(outlier.colour = NA, alpha = 0.5)+
+    geom_point(
+      data = true_results %>% mutate(race=factor(race, levels=race_order)),
+      aes(y=sth_pctdem),
+      color="blue"
+    ) +
+    theme_sixtysix()+
+    theme(
+      panel.grid.major.x = element_blank(),
+      axis.text.x = element_blank()
+    ) +
+    xlab("race (sorted by predicted pct dem)") +
+    scale_y_continuous(breaks = seq(0,1,0.25))+
+    ggtitle(paste("Race-by-race predictions for", holdout_year), "Blue is actual results.")
+}
+
+gg_race_pred(bs)
+```
+Looks ok. Nothing insane.
+
+Finally, what was our topline number?
+```{r topline_hist}
+pivotal_bs <- function(x, q){
+  mean_x <- mean(x)
+  q0 <- 1 - q
+  raw_quantiles <- quantile(x, q0)
+  true_quantiles <- 2 * mean_x - raw_quantiles
+  names(true_quantiles) <- scales::percent(q)
+  return(true_quantiles)
+}
+
+gg_pred_hist <- function(bs, true_line=TRUE){
+  holdout_year <- bs$holdout_year
+  print("bootstrapped predictions")
+  pred_total <- bs$sample %>% 
+    group_by(sim) %>%
+    summarise(n_dem_wins = sum(pred_samp > 0.5)) %>%
+    group_by()
+  print(mean(pred_total$n_dem_wins))
+  print(pivotal_bs(pred_total$n_dem_wins, c(0.025, 0.2, 0.8, 0.975)))
+  
+  if(true_line){
+    print("actual results")
+    true_dem_wins <- df[df$year == holdout_year,] %>% with(sum(sth_pctdem > 0.5))
+    print(true_dem_wins)
+    gg_annotation <- function() 
+      annotate(
+        geom="text",
+        x = true_dem_wins,
+        y = 10,
+        angle = 90,
+        hjust = 0,
+        vjust = 1.1,
+        label = paste("True outcome =", true_dem_wins)
+      )
+  } else {
+    true_dem_wins <- numeric(0)
+    gg_annotation <- geom_blank
+  }
+  
+  ggplot(pred_total, aes(x = n_dem_wins, fill = n_dem_wins < 101.5)) + 
+    geom_histogram(binwidth = 1) + 
+    geom_vline(xintercept = true_dem_wins) +
+    gg_annotation() +
+    ggtitle(paste("Predicted Democratic seats in", holdout_year)) +
+    xlab("N Democratic Seats") +
+    ylab("N Bootstrap Sims") +
+    theme_sixtysix() +
+    scale_fill_manual(
+      values = c(`TRUE`=strong_red, `FALSE` = strong_blue),
+      guide = FALSE
+    )
+}
+
+gg_pred_hist(bs)
+```
+
+We predicted Democrats would win 84 out of 203 seats, with a 95% CI of [79,89]. They actually won 82. \_sunglassesemoji\_
+
+Ok, now let's do the whole darn thing. We will run the bootstrap above, but iterating through holding out each year.
+
+```{r all_bootstrap}
+bs_years <- list()
+for(holdout in seq(2004, 2016, 2)){
+  print(paste("###", holdout, "###"))
+  bs_years[[as.character(holdout)]] <- bootstrap(
+    df, 
+    holdout=holdout, 
+    contested_form=contested_form, 
+    uncontested_form=uncontested_form,
+    verbose=FALSE
+  )
+}
+```
+
+Let's check the results!
+```{r pred_histograms}
+for(holdout in seq(2004, 2016, 2)){
+  gg_pred_hist(bs_years[[as.character(holdout)]]) %>% print()
+}
+```
+
+All of the years look okay... oof, except for 2006. That's bad. We predicted a Democratic landslide of 124-79, and in actuality Democrates eked out a 102-101 majority. 
+
+Look at the race level predictions:
+```{r race_pred_2006}
+gg_race_pred(bs_years[['2006']])
+```
+We aren't getting any single race terribly wrong, but we systematically over-predict Democratic performance in the Republican districts. What especially hurts is the middle of the plot, where we predict 60-40 Democratic wins and Republicans won 60-40 instead.
+
+What happened?
+
+It's exactly what I was worried about above: 2006 was an fundamentally different year from the others. 
+
+```{r gov_holdout}
+load("data/relational_db.rda")
+races %>% 
+  filter(
+    office %in% c("USP", "GOV") &
+    substr(race, 6, 6) == 'G'
+  ) %>%
+  with({x <- pct_dem_2party; names(x) <- election; x})
+```
+
+Rendell won in 2006 by 60-40, doubling the second highest margin of 55-45 from 2002, 2008. 2010, and 2014. When we holdout 2006, we fit the model on a small range of annual fixed effects, and 2006 is then an outlier.
+
+So what do we do? We have a few options.
+
+- Do nothing. When we predict for 2018, 2006 will be in our training set, so we will have that coverage. FiveThirtyEight projects Wolf to win 57-43, so it's not as much of an outlier as 2006.
+
+- Be Bayesian. Model the annual random effects and throw on a strong prior. This is my instinct, but I'm committed to being Frequentist for the workshop :)
+
+- Rejigger the formulas we use. While it's a cardinal sin to retouch your model after evaluating a test set, we don't have enough years to use best practices (ideally we would create a super-holdout of years that we never looked at until the very end. But I'm not willing to throw out years when we only have seven). If we do this, we need to be intellectually honest with ourselves, and be super duper careful not to overfit the model. I attempt to achieve this by limiting myself to specifications that would only be a priori obvious, and that use only as many or fewer degrees of freedom as what I've already fit.
+
+Let's do option one. We won't touch our model, and we'll hope that since 2006 is in our training data now, 2018 won't be a bad outlier.
+
+Let's predict!
+
+## Predicting 2018
+
+Now for the good stuff! Let's predict 2018!
+```{r 2018, fig.height=7}
+load("outputs/df_2018.rda")
+
+df <- bind_rows(df, df_2018)
+
+pred_2018 <- bootstrap(
+  df,
+  holdout=2018,
+  contested_form=contested_form,
+  uncontested_form=uncontested_form
+)
+
+gg_race_pred(pred_2018)
+gg_pred_hist(pred_2018, true_line = FALSE)
+```
+
+We predict Republicans to win the house 108-95, with a 95% CI on Dem seats of [87 - 102]. Republicans win the majority in `r pred_2018$sample %>% group_by(sim) %>% summarise(rep_win = (sum(pred_samp < 0.5) > 101.5)) %>% with(scales::percent(mean(rep_win)))` of bootstraps. 
+
+## Fast forward to today
+Ok, we're not actually in October 2018. We know who actually won. How did these predictions do?
+
+```{r evaluation}
+results_2018 <- read.csv(
+  "C:/Users/Jonathan Tannen/Downloads/UnOfficial_11232018092637AM.CSV"
+) %>%
+  mutate(
+    vote_total = asnum(gsub("\\,","",Votes)),
+    sth = sprintf("%03d", asnum(gsub("^([0-9]+)[a-z].*", "\\1", District.Name))),
+    party = ifelse(
+      Party.Name == "Democratic", "DEM", 
+      ifelse(Party.Name == "Republican", "REP", NA)
+    )
+  ) %>%
+  mutate(
+    party = replace(
+      party, 
+      Candidate.Name %in% c(
+        "BERNSTINE, AARON JOSEPH ",  "SANKEY, THOMAS R III", "GABLER, MATTHEW M "), 
+      "REP"
+    ),
+    party = replace(party, Candidate.Name == "LONGIETTI, MARK ALFRED ", "DEM")
+  ) %>%
+  filter(!is.na(party)) %>%
+  group_by(sth, party) %>%
+  summarise(votes = sum(vote_total)) %>%
+  group_by(sth) %>%
+  summarise(sth_pctdem = sum(votes * (party == "DEM")) / sum(votes))
+
+df <- left_join(df, results_2018, by = "sth", suffix = c("",".2018")) %>%
+  mutate(
+    sth_pctdem = ifelse(
+      substr(race,1,4)=="2018", 
+      sth_pctdem.2018, 
+      sth_pctdem
+    )
+  ) %>% select(-sth_pctdem.2018)
+  
+gg_pred_hist(pred_2018)
+```
+
+Democrats won 93 State House seats, right in the heart of our prediction.
+
+```{r seat_pred}
+gg_race_pred(pred_2018)
+```
+These look ok. If anything, we underpredicted Democrats in strong Republican districts, but none of them actually won, so they didn't hurt our topline.
+
+Huh, looks like we did pretty well.
+
+See you in 2020!
