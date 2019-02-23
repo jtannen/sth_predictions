@@ -11,7 +11,7 @@
 
 <meta name="author" content="Jonathan Tannen" />
 
-<meta name="date" content="2019-02-12" />
+<meta name="date" content="2019-02-23" />
 
 <title>Getting the rectangular data</title>
 
@@ -121,14 +121,14 @@ $(document).ready(function () {
 
 <h1 class="title toc-ignore">Getting the rectangular data</h1>
 <h4 class="author"><em>Jonathan Tannen</em></h4>
-<h4 class="date"><em>February 12, 2019</em></h4>
+<h4 class="date"><em>February 23, 2019</em></h4>
 
 </div>
 
 
 <div id="predicting-the-state-house-part-3" class="section level2">
 <h2>Predicting the State House, Part 3</h2>
-<p>I’m hosting a workshop at Penn’s <a href="https://penniur.upenn.edu/instruction/graduate">Masters of Urban Spatial Analytics</a> program. In it, I’m speaking on my work <a href="blog_link">predicting the 2018 State House race</a>. It’s forced me to organize my code, and I think it’s useful enough that I’ll be posting the course resources here as well. This tutorial is organized into four parts: the <a href="01_relational_db.html">Relational Database</a>, <a href="02_geographies.html">Processing the GIS Geographies</a>, Prepping the Data for Analysis, and <a href="04_model.html">Making the Predictions</a>. In this post, prepping the data for analysis.</p>
+<p>I’m hosting a workshop at Penn’s <a href="https://penniur.upenn.edu/instruction/graduate">Masters of Urban Spatial Analytics</a> program. In it, I’m speaking on my work <a href="https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents">predicting the 2018 State House race</a>. It’s forced me to organize my code, and I think it’s useful enough that I’ll be posting the course resources here as well. This tutorial is organized into four parts: the <a href="01_relational_db.html">Relational Database</a>, <a href="02_geographies.html">Processing the GIS Geographies</a>, Prepping the Data for Analysis, and <a href="04_model.html">Making the Predictions</a>. In this post, prepping the data for analysis.</p>
 </div>
 <div id="prepping-the-data-for-analysis" class="section level2">
 <h2>Prepping the data for analysis</h2>
@@ -521,7 +521,7 @@ fivethirtyeight &lt;- read_csv(&quot;data/congress_races_2018_538.csv&quot;) %&g
   mutate(usc = sprintf(&quot;%02d&quot;, district)) %&gt;%
   rename(usc_pctdem = fivethirtyeight)
 
-## notice that one race is uncontested. we need to impute
+## notice that one race is uncontested. we need to impute it.
 ## it looks like uncontested winners should be imputed as 66%:
 print(
   imputation_df %&gt;% 

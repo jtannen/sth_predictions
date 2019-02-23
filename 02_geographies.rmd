@@ -1,7 +1,7 @@
 ---
 title: "Building the Geographies"
 author: "Jonathan Tannen"
-date: "February 9, 2019"
+date: "February 23, 2019"
 output: html_document
 ---
 
@@ -13,6 +13,8 @@ knitr::opts_chunk$set(
   dpi=300,
   root.dir = "C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop/"
 )
+
+setwd("C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop")
 ```
 
 ## Predicting the State House, Part 2
