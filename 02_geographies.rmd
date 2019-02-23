@@ -78,14 +78,22 @@ library(rgeos)
 library(rgdal)
 library(sp)
 
-sth_pre2012 <- st_read("data/state_house/tigris_lower_house_2011.shp") %>% mutate(sth = SLDLST)
-sth_post2012 <- st_read("data/state_house/tigris_lower_house_2015.shp") %>% mutate(sth = SLDLST)
-sts_pre2012 <- st_read("data/state_senate/tigris_upper_house_2011.shp") %>% mutate(sts = SLDUST)
-sts_post2012 <- st_read("data/state_senate/tigris_upper_house_2015.shp") %>% mutate(sts = SLDUST)
-usc_pre2012 <- st_read("data/congress/tigris_usc_2011.shp") %>% mutate(usc = CD111FP)
-usc_post2012 <- st_read("data/congress/tigris_usc_2015.shp") %>% mutate(usc = CD114FP)
-usc_2018 <- st_read("data/congress/supcourt_usc_2018.shp") %>% mutate(usc = DISTRICT)
-counties <- st_read("data/census/tigris_counties_2015.shp") %>% mutate(cofips = COUNTYFP)
+sth_pre2012 <- st_read("data/state_house/tigris_lower_house_2011.shp", quiet=TRUE) %>%
+  mutate(sth = SLDLST)
+sth_post2012 <- st_read("data/state_house/tigris_lower_house_2015.shp", quiet=TRUE) %>%
+  mutate(sth = SLDLST)
+sts_pre2012 <- st_read("data/state_senate/tigris_upper_house_2011.shp", quiet=TRUE) %>%
+  mutate(sts = SLDUST)
+sts_post2012 <- st_read("data/state_senate/tigris_upper_house_2015.shp", quiet=TRUE) %>%
+  mutate(sts = SLDUST)
+usc_pre2012 <- st_read("data/congress/tigris_usc_2011.shp", quiet=TRUE) %>% 
+  mutate(usc = CD111FP)
+usc_post2012 <- st_read("data/congress/tigris_usc_2015.shp", quiet=TRUE) %>%
+  mutate(usc = CD114FP)
+usc_2018 <- st_read("data/congress/supcourt_usc_2018.shp", quiet=TRUE) %>% 
+  mutate(usc = DISTRICT)
+counties <- st_read("data/census/tigris_counties_2015.shp", quiet=TRUE) %>%
+  mutate(cofips = COUNTYFP)
 
 
 ## some helper functions

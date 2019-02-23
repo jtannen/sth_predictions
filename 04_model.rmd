@@ -20,6 +20,8 @@ setwd("C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop/")
 ## Predicting the State House, Part 4
 I'm hosting a workshop at Penn's [Masters of Urban Spatial Analytics](https://penniur.upenn.edu/instruction/graduate) program. In it, I'm speaking on my work [predicting the 2018 State House race](https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents). It's forced me to organize my code, and I think it's useful enough that I'll be posting the course resources here as well. This tutorial is organized into four parts: the [Relational Database](01_relational_db.html), [Processing the GIS Geographies](02_geographies.html), [Prepping the Data for Analysis](03_rectangular_data.html), and Making the Predictions. In this post, the good stuff: making the predictions.
 
+All of the data and resources are available [on github]("https://github.com/jtannen/sth_predictions").
+
 ```{r load}
 library(tidyverse)
 source("utils/util.R")
@@ -192,7 +194,7 @@ fit_once <- function(df, holdout, contested_form, uncontested_form, verbose = TR
   if(verbose) {
     print("Contested Model")
     print(summary(contested_fit)) 
-    dummy <- readline(prompt="Press [enter] to continue")
+    # dummy <- readline(prompt="Press [enter] to continue")
   }
   
   df$pred <- NA
@@ -389,6 +391,63 @@ gg_race_pred(bs)
 ```
 Looks ok. Nothing insane.
 
+What if we map them?
+```{r residual_map}
+library(sf)
+library(rgeos)
+
+sth_11 <- st_read("data/state_house/tigris_lower_house_2011.shp", quiet=TRUE) %>%
+  mutate(vintage="<=2012")
+sth_15 <- st_read("data/state_house/tigris_lower_house_2015.shp", quiet=TRUE) %>%
+  mutate(vintage=">2012")
+
+sth_sf <- rbind(sth_11, sth_15) %>% rename(sth = SLDLST)
+sth_pts <- mapply(st_centroid, sth_sf$geometry) %>% t
+sth_sf <- sth_sf %>% mutate(x=sth_pts[,1], y=sth_pts[,2])
+
+pa_sf <- st_union(sth_sf)
+
+sth_vintage <- data.frame(
+  year = seq(2002, 2018, 2)
+) %>% mutate(vintage = ifelse(year <= 2012, "<=2012", ">2012"))
+
+map_residuals <- function(bs){
+  holdout_year <- bs$holdout_year
+  sf_vintage <- sth_vintage %>% filter(year==holdout_year) %>% with(vintage)
+  sf <- sth_sf %>% filter(vintage == sf_vintage) 
+  
+  true_results <- df[df$year == holdout_year,]
+  
+  bs_pred <- bs$sample %>% group_by(sth, condition) %>% summarise(pred = mean(pred))
+  
+  ggplot(
+    sf %>% 
+      left_join(bs_pred) %>% 
+      left_join(true_results) %>%
+      filter(condition == 'contested')
+  ) +
+    geom_sf(data = pa_sf) +
+    geom_point(
+      aes(x=x, y=y, size=abs(sth_pctdem-pred), color=ifelse(pred > sth_pctdem, "Dem", "Rep"))
+    ) +
+    scale_color_manual(
+      values=c(Dem = strong_blue, Rep = strong_red), 
+      guide=FALSE
+    ) +
+    scale_size_area(guide = FALSE) +
+    theme_map_sixtysix() +
+    ggtitle(
+      paste("Residual Map for", holdout_year),
+      "Blue mean Dem overpredicted, Red means Rep"
+    )
+}
+
+map_residuals(bs)
+
+```
+
+There may be a story here, but I'm not sure. Maybe we are systematically over-predicting Dems in Philadelphia, and over-predicting Republicans in the immediate suburbs? We may also be over-interpreting.
+
 Finally, what was our topline number?
 ```{r topline_hist}
 pivotal_bs <- function(x, q){
@@ -505,11 +564,20 @@ So what do we do? We have a few options.
 
 Let's do option one. We won't touch our model, and we'll hope that since 2006 is in our training data now, 2018 won't be a bad outlier.
 
-Let's predict!
+For completeness, let's revisit the maps of residuals. Does it look like we systematically mis-predict a given region?
+```{r maps}
+for(bs in bs_years){
+  map_residuals(bs) %>% print
+}
+```
+
+I don't see an obvious pattern from year to year. If you do, let me know.
+
+Done with the due dilligence. Let's predict!
 
 ## Predicting 2018
 
-Now for the good stuff! Let's predict 2018!
+We'll predict the 2018 election. We've already prepped the 2018 equivalent of `df` in [Prepping the Data for Analysis](03_rectangular_data.html).
 ```{r 2018, fig.height=7}
 load("outputs/df_2018.rda")
 
