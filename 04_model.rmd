@@ -199,7 +199,7 @@ conditions <- c(
     name="previously_uncontested", 
     formula=uncontested_form, 
     filter_func=function(df) {
-      abs(df$dem_is_uncontested) != 1 & df$sth_frac_contested_lagged <= 0.5
+      abs(df$dem_is_uncontested) != 1 & df$sth_frac_contested_lagged > 0.5
     },
     warn=TRUE
   ),
@@ -208,7 +208,7 @@ conditions <- c(
     name="contested", 
     formula=contested_form, 
     filter_func=function(df) {
-      abs(df$dem_is_uncontested) != 1 & df$sth_frac_contested_lagged > 0.5
+      abs(df$dem_is_uncontested) != 1 & df$sth_frac_contested_lagged <= 0.5
     },
     warn=TRUE
   )
@@ -289,7 +289,7 @@ fit_once <- function(df0, holdout_year, conditions, verbose = TRUE){
 
 results_once <- fit_once(
   vote_df, 
-  2016, 
+  2010, 
   conditions
 )
 ```
@@ -394,7 +394,7 @@ bootstrap <- function(df0, holdout_year, conditions, nboot=1000, verbose=TRUE, .
 
 bs <- bootstrap(
   vote_df, 
-  2016, 
+  2014, 
   conditions,
   verbose=TRUE
 )
