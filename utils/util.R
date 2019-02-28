@@ -3,6 +3,11 @@ library(colorspace)
 
 asnum <- function(x) as.numeric(as.character(x))
 
+safe_load <- function(file){
+  e <- new.env()
+  load(file, envir = e)
+  if(length(e) == 1) return(e[[names(e)]]) else return(as.list(e))
+}
 
 theme_sixtysix <- function (base_size = 12, base_family = "sans") {
     (theme_foundation(base_size = base_size, base_family = base_family) + 
