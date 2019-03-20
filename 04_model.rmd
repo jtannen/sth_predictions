@@ -20,7 +20,7 @@ setwd("C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop/")
 ## Predicting the State House, Part 4
 I'm hosting a workshop at Penn's [Masters of Urban Spatial Analytics](https://penniur.upenn.edu/instruction/graduate) program. In it, I'm speaking on my work [predicting the 2018 State House race](https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents). It's forced me to organize my code, and I think it's useful enough that I'll be posting the course resources here as well. This tutorial is organized into four parts: the [Relational Database](01_relational_db.html), [Processing the GIS Geographies](02_geographies.html), [Prepping the Data for Analysis](03_rectangular_data.html), and Making the Predictions. In this post, the good stuff: making the predictions.
 
-All of the data and resources are available [on github]("https://github.com/jtannen/sth_predictions").
+All of the data and resources are available [on github](https://github.com/jtannen/sth_predictions).
 
 ```{r load}
 library(tidyverse)
@@ -121,7 +121,7 @@ We won't naively do row-level bootstrapping. I'm seriously worried that there co
 
 Instead, we want the Multiway Bootstrap. We'll bootstrap at the year-level where we think effects are plausibly independent. Notice that this takes our N down from 203 * 7 races down to 7 years. Oof.
 
-Here's my approach: I'll fit the model by bootstrapping years In order to validate, we'll walk through holding out each election as our test set. We only have seven elections to do this for (2004 - 2016; we can't use 2002 since we need lagged data), but hopefully that's enough to spot bad behaviors. This isn't the best practice of never touching a test set, but when N=7 you can't do best practices. Instead, I claim I've chosen a super conservative approach, and we'll need to be honest about not overfitting the data.
+Here's my approach: I'll fit the model by bootstrapping years. In order to validate, we'll walk through holding out each election as our test set. We only have seven elections to do this for (2004 - 2016; we can't use 2002 since we need lagged data), but hopefully that's enough to spot bad behaviors. This isn't the best practice of never touching a test set, but when N=7 you can't do best practices. Instead, I claim I've chosen a super conservative approach, and we'll need to be honest about not overfitting the data.
 
 ### Crosswalking
 
@@ -742,8 +742,7 @@ ggplot(
 
 ```
 
-When we held out 2010, we estimated the single highest intercept (good for the Democrats), along with the lowest correlations of USC results and prior STH races. Then, when we 2010 to those coefficients, a good year for Republicans, the model totall overshoots. Darn.
-
+When we held out 2010, we estimated the single highest intercept (good for the Democrats), along with the lowest correlations of USC results and prior STH races. Then, when use those coefficients in 2010, a good year for Republicans, the model totall overshoots. Darn.
 
 So what do we do? We have a few options.
 
@@ -777,7 +776,6 @@ load("outputs/df_2018.rda")
 df_2018 <- df_2018 %>% add_cols()
 df_2018 <- add_condition(df_2018, conditions)
 vote_df <- bind_rows(vote_df, df_2018)
-
 
 pred_2018 <- bootstrap(
   vote_df,
