@@ -1,7 +1,7 @@
 ---
 title: "The PA Election Relational Database"
 author: "Jonathan Tannen"
-date: "February 23, 2019"
+date: "March 20, 2019"
 output: html_document
 ---
 
@@ -18,7 +18,11 @@ setwd("C:/Users/Jonathan Tannen/Dropbox/sixty_six/posts/musa_workshop")
 ```
 
 ## Predicting the State House, Part 1
-I'm hosting a workshop at Penn's [Masters of Urban Spatial Analytics](https://penniur.upenn.edu/instruction/graduate) program. In it, I'm speaking on my work [predicting the 2018 State House race](https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents). It's forced me to organize my code, and I think it's useful enough that I'll be posting the course resources here as well. This tutorial is organized into four parts: the Relational Database, [Processing the GIS Geographies](02_geographies.html), [Prepping the Data for Analysis](03_rectangular_data.html), and [Making the Predictions](04_model.html). In this post, the Relational Database.
+I'm teaching a workshop at Penn's [Masters of Urban Spatial Analytics](https://www.eventbrite.com/e/penn-musa-election-analytics-workshop-tickets-56058974903) program. I'm presenting my work [predicting the 2018 State House race](https://sixtysixwards.com/home/model-update-is-the-race-really-is-the-race-really-a-tossup-it-depends-on-the-formerly-uncontested-incumbents). It's forced me to organize my code, and I think it's useful enough that I'll be posting the course resources here as well. This tutorial is organized into four parts: the Relational Database, [Processing the GIS Geographies](02_geographies.html), [Prepping the Data for Analysis](03_rectangular_data.html), and [Making the Predictions](04_model.html). In this post, the Relational Database.
+
+*If you try this out before April 22nd, please send feedback! I'll be updating it.*
+
+**All of the data is available at https://github.com/jtannen/sth_predictions **
 
 ## The Relational Database
 
@@ -27,6 +31,7 @@ Before we can talk about modelling, I'll outline the data as I currently have it
 A relational database consists of separate rectangular datasets. Each dataset has a column or set of columns that provide a unique key. The other data in that row should be only data that applies to that row; you don't want data in multiple rows that represent the same information.
 
 For example, part of my data-base is the data.frame `results`. The key for this data.frame is four columns: 
+
 - `race` (e.g. \"2016 G STH STH-8\", meaning the competition for the 2016 General, State House district 8)
 - `candidate` (e.g. \"JUDITH D HINES (STH)\")
 - `county_code_.` and `precinct_code`, which identify unique precincts.
